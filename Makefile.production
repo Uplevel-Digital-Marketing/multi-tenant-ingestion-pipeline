@@ -1,0 +1,145 @@
+# Makefile for multi-tenant ingestion pipeline - Production Operations
+
+.PHONY: help build test clean deploy setup-dev docker-build run-local
+
+PROJECT_ID := account-strategy-464106
+REGION := us-central1
+
+# Default target
+help:
+	@echo "Available commands:"
+	@echo "  build          - Build all Go binaries"
+	@echo "  test           - Run all tests"
+	@echo "  clean          - Clean build artifacts"
+	@echo "  deploy         - Deploy to production"
+	@echo "  setup-dev      - Set up development environment"
+	@echo "  docker-build   - Build Docker images locally"
+	@echo "  run-local      - Run services locally"
+	@echo "  terraform-init - Initialize Terraform"
+	@echo "  terraform-plan - Plan Terraform changes"
+	@echo "  terraform-apply - Apply Terraform changes"
+
+# Build all binaries
+build:
+	@echo "Building all services..."
+	mkdir -p bin
+	CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/webhook-processor ./cmd/webhook-processor
+	CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/api-gateway ./cmd/api-gateway
+	@echo "Build complete!"
+
+# Run tests
+test:
+	@echo "Running tests..."
+	go test ./... -v -cover
+	@echo "Tests complete!"
+
+# Clean build artifacts
+clean:
+	@echo "Cleaning..."
+	rm -rf bin/
+	go clean ./...
+	docker rmi -f gcr.io/$(PROJECT_ID)/webhook-processor:latest 2>/dev/null || true
+	docker rmi -f gcr.io/$(PROJECT_ID)/api-gateway:latest 2>/dev/null || true
+	@echo "Clean complete!"
+
+# Deploy to production (requires gcloud setup)
+deploy:
+	@echo "Deploying to production..."
+	gcloud config set project $(PROJECT_ID)
+	gcloud builds submit --config cloudbuild.yaml
+	@echo "Deployment complete!"
+
+# Set up development environment
+setup-dev:
+	@echo "Setting up development environment..."
+	go mod download
+	go mod tidy
+	@echo "Development environment ready!"
+
+# Build Docker images locally
+docker-build:
+	@echo "Building Docker images..."
+	docker build -f deployments/docker/webhook-processor.Dockerfile -t gcr.io/$(PROJECT_ID)/webhook-processor:latest .
+	docker build -f deployments/docker/api-gateway.Dockerfile -t gcr.io/$(PROJECT_ID)/api-gateway:latest .
+	@echo "Docker images built!"
+
+# Run services locally (for testing)
+run-local:
+	@echo "Starting services locally..."
+	@echo "Make sure you have proper environment variables set!"
+	@echo "Starting webhook-processor on port 8080..."
+	PORT=8080 go run ./cmd/webhook-processor &
+	@echo "Starting api-gateway on port 8081..."
+	PORT=8081 go run ./cmd/api-gateway &
+	@echo "Services started! Press Ctrl+C to stop."
+
+# Terraform commands
+terraform-init:
+	@echo "Initializing Terraform..."
+	cd deployments/terraform && terraform init
+
+terraform-plan:
+	@echo "Planning Terraform changes..."
+	cd deployments/terraform && terraform plan
+
+terraform-apply:
+	@echo "Applying Terraform changes..."
+	cd deployments/terraform && terraform apply
+
+# Database schema updates
+db-update:
+	@echo "Applying database schema updates..."
+	gcloud spanner databases ddl update agent_platform \
+		--instance=upai-customers \
+		--ddl-file=database-schema-updates.sql \
+		--project=$(PROJECT_ID)
+
+# Enable required APIs
+enable-apis:
+	@echo "Enabling required GCP APIs..."
+	gcloud services enable run.googleapis.com
+	gcloud services enable spanner.googleapis.com
+	gcloud services enable aiplatform.googleapis.com
+	gcloud services enable speech.googleapis.com
+	gcloud services enable storage.googleapis.com
+	gcloud services enable secretmanager.googleapis.com
+	gcloud services enable cloudtasks.googleapis.com
+	gcloud services enable cloudbuild.googleapis.com
+
+# Create storage bucket
+create-bucket:
+	@echo "Creating audio storage bucket..."
+	gsutil mb -p $(PROJECT_ID) \
+		-c STANDARD \
+		-l $(REGION) \
+		gs://tenant-audio-files-$(PROJECT_ID) || true
+
+# Local development with hot reload (requires air: go install github.com/cosmtrek/air@latest)
+dev-webhook:
+	@echo "Starting webhook-processor with hot reload..."
+	cd cmd/webhook-processor && air
+
+dev-api:
+	@echo "Starting api-gateway with hot reload..."
+	cd cmd/api-gateway && air
+
+# Full setup for new environment
+setup-full: enable-apis terraform-apply db-update create-bucket
+	@echo "Full environment setup complete!"
+
+# Logs
+logs-webhook:
+	@echo "Streaming webhook-processor logs..."
+	gcloud logs tail "resource.type=cloud_run_revision AND resource.labels.service_name=webhook-processor" --project=$(PROJECT_ID)
+
+logs-api:
+	@echo "Streaming api-gateway logs..."
+	gcloud logs tail "resource.type=cloud_run_revision AND resource.labels.service_name=api-gateway" --project=$(PROJECT_ID)
+
+# Health checks
+health-check:
+	@echo "Checking service health..."
+	@WEBHOOK_URL=$$(gcloud run services describe webhook-processor --region=$(REGION) --format='value(status.url)' --project=$(PROJECT_ID)) && \
+	curl -f "$$WEBHOOK_URL/health" && echo "✓ Webhook processor healthy"
+	@API_URL=$$(gcloud run services describe api-gateway --region=$(REGION) --format='value(status.url)' --project=$(PROJECT_ID)) && \
+	curl -f "$$API_URL/health" && echo "✓ API gateway healthy"

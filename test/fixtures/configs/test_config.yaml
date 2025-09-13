@@ -1,0 +1,307 @@
+# Comprehensive Test Configuration for Multi-Tenant Ingestion Pipeline
+
+# Test Environment Settings
+environment:
+  name: "test"
+  debug: true
+  log_level: "debug"
+
+# Google Cloud Platform Test Settings
+gcp:
+  project_id: "test-project"
+  spanner:
+    instance_id: "test-instance"
+    database_id: "test-database"
+    emulator_host: "localhost:9010"
+    connection_pool_size: 10
+
+  # Other GCP services (for future testing)
+  storage:
+    bucket_name: "test-audio-bucket"
+    emulator_host: "localhost:9023"
+
+  pubsub:
+    emulator_host: "localhost:8085"
+    topics:
+      - "ingestion-events"
+      - "processing-results"
+      - "crm-integrations"
+
+# Test Database Configuration
+database:
+  auto_migrate: true
+  reset_between_tests: true
+  seed_test_data: true
+  cleanup_on_exit: true
+
+# Test Data Configuration
+test_data:
+  tenants:
+    - id: "test-tenant-1"
+      name: "Kitchen Specialists"
+      type: "premium"
+      active: true
+    - id: "test-tenant-2"
+      name: "Bathroom Renovators"
+      type: "standard"
+      active: true
+    - id: "test-tenant-3"
+      name: "Inactive Tenant"
+      type: "basic"
+      active: false
+
+  audio_files:
+    small_file:
+      path: "test/fixtures/audio/small_test.wav"
+      duration_ms: 30000
+      size_bytes: 512000
+    medium_file:
+      path: "test/fixtures/audio/medium_test.wav"
+      duration_ms: 120000
+      size_bytes: 2048000
+    large_file:
+      path: "test/fixtures/audio/large_test.wav"
+      duration_ms: 300000
+      size_bytes: 5120000
+    poor_quality:
+      path: "test/fixtures/audio/poor_quality.wav"
+      duration_ms: 60000
+      size_bytes: 1024000
+
+# Load Testing Configuration
+load_testing:
+  scenarios:
+    light_load:
+      duration: "2m"
+      ramp_up: "30s"
+      steady_state: "1m"
+      ramp_down: "30s"
+      virtual_users: 10
+      requests_per_second: 5
+
+    medium_load:
+      duration: "5m"
+      ramp_up: "1m"
+      steady_state: "3m"
+      ramp_down: "1m"
+      virtual_users: 50
+      requests_per_second: 25
+
+    heavy_load:
+      duration: "10m"
+      ramp_up: "2m"
+      steady_state: "6m"
+      ramp_down: "2m"
+      virtual_users: 100
+      requests_per_second: 50
+
+    stress_test:
+      duration: "15m"
+      ramp_up: "3m"
+      steady_state: "9m"
+      ramp_down: "3m"
+      virtual_users: 200
+      requests_per_second: 100
+
+  performance_thresholds:
+    avg_response_time: "2s"
+    p95_response_time: "5s"
+    p99_response_time: "10s"
+    error_rate: "5%"
+    throughput_min: "10 req/s"
+
+# Security Testing Configuration
+security_testing:
+  authentication:
+    valid_tokens:
+      - tenant: "test-tenant-1"
+        user: "test-user-1"
+        role: "user"
+        permissions: ["upload", "read"]
+      - tenant: "test-tenant-2"
+        user: "admin-user"
+        role: "admin"
+        permissions: ["upload", "read", "delete", "admin"]
+
+    invalid_tokens:
+      - type: "expired"
+        description: "Token expired 1 hour ago"
+      - type: "malformed"
+        description: "Invalid JWT format"
+      - type: "wrong_signature"
+        description: "Token signed with wrong key"
+
+  tenant_isolation:
+    cross_tenant_tests:
+      - tenant_a: "test-tenant-1"
+        tenant_b: "test-tenant-2"
+        expected_result: "forbidden"
+
+  injection_tests:
+    sql_injection:
+      - "'; DROP TABLE ingestion_records; --"
+      - "' OR '1'='1"
+      - "' UNION SELECT * FROM tenant_configurations --"
+
+    xss_tests:
+      - "<script>alert('xss')</script>"
+      - "javascript:alert('xss')"
+      - "<img src=x onerror=alert('xss')>"
+
+# API Testing Configuration
+api_testing:
+  base_url: "http://localhost:8080"
+  endpoints:
+    upload: "/api/v1/ingestion/upload"
+    status: "/api/v1/ingestion/status"
+    records: "/api/v1/ingestion/records"
+    admin: "/api/v1/admin"
+    health: "/api/v1/health"
+
+  timeout: "30s"
+  retry_attempts: 3
+  retry_delay: "1s"
+
+# Mock Services Configuration
+mock_services:
+  audio_processor:
+    processing_delay: "2s"
+    failure_rate: 0.01
+    supported_formats: ["wav", "mp3", "m4a", "flac"]
+    max_file_size: "100MB"
+
+  ai_service:
+    processing_delay: "1s"
+    confidence_threshold: 0.8
+    failure_rate: 0.005
+    mock_responses:
+      high_confidence:
+        confidence: 0.95
+        extracted_data:
+          contact:
+            name: "John Doe"
+            phone: "555-1234"
+            email: "john@example.com"
+          project:
+            type: "kitchen"
+            budget: "$25000-$40000"
+      low_confidence:
+        confidence: 0.45
+        extracted_data:
+          contact:
+            name: "unclear"
+          project:
+            type: "unknown"
+
+  crm_service:
+    response_delay: "500ms"
+    failure_rate: 0.02
+    supported_types: ["salesforce", "hubspot", "pipedrive"]
+    mock_responses:
+      success:
+        lead_id: "CRM-12345"
+        status: "created"
+      failure:
+        error: "CRM integration failed"
+
+# Test Reporting Configuration
+reporting:
+  formats: ["json", "html", "junit"]
+  output_directory: "./test-reports"
+  include_coverage: true
+  coverage_threshold: 80
+
+  metrics:
+    - name: "test_duration"
+      description: "Total test execution time"
+    - name: "test_count"
+      description: "Number of tests executed"
+    - name: "success_rate"
+      description: "Percentage of successful tests"
+    - name: "coverage_percentage"
+      description: "Code coverage percentage"
+
+# Chaos Testing Configuration
+chaos_testing:
+  enabled: false  # Enable for chaos testing
+  scenarios:
+    network_latency:
+      duration: "5m"
+      latency: "2s"
+      jitter: "500ms"
+
+    service_failure:
+      duration: "2m"
+      failure_rate: 0.5
+      affected_services: ["ai_service"]
+
+    database_slowdown:
+      duration: "3m"
+      query_delay: "1s"
+
+    resource_exhaustion:
+      duration: "5m"
+      memory_limit: "100MB"
+      cpu_limit: "50%"
+
+# Integration Testing Configuration
+integration_testing:
+  external_services:
+    timeout: "10s"
+    retry_policy:
+      max_attempts: 3
+      backoff: "exponential"
+      initial_delay: "1s"
+      max_delay: "10s"
+
+  database_tests:
+    transaction_timeout: "5s"
+    connection_pool_size: 5
+    isolation_level: "read_committed"
+
+# Performance Benchmarks
+benchmarks:
+  audio_processing:
+    file_sizes: [1024, 10240, 102400, 1048576]  # bytes
+    concurrent_requests: [1, 5, 10, 20]
+    duration: "1m"
+
+  database_operations:
+    batch_sizes: [1, 10, 100, 1000]
+    concurrent_connections: [1, 5, 10]
+    operation_types: ["insert", "select", "update", "delete"]
+
+  memory_usage:
+    max_heap_size: "512MB"
+    gc_target_percentage: 100
+    monitor_duration: "10m"
+
+# Test Cleanup Configuration
+cleanup:
+  auto_cleanup: true
+  cleanup_timeout: "30s"
+  preserve_on_failure: false
+  cleanup_order:
+    - "test_data"
+    - "mock_services"
+    - "database_connections"
+    - "temporary_files"
+
+# Monitoring and Observability
+monitoring:
+  metrics_enabled: true
+  tracing_enabled: true
+  logging:
+    level: "debug"
+    format: "json"
+    output: ["stdout", "file"]
+    file_path: "./test-logs/test.log"
+
+  health_checks:
+    interval: "30s"
+    timeout: "5s"
+    endpoints:
+      - name: "database"
+        url: "spanner://test-instance/test-database"
+      - name: "api"
+        url: "http://localhost:8080/api/v1/health"

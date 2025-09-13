@@ -1,0 +1,658 @@
+openapi: 3.1.0
+info:
+  title: Multi-Tenant Ingestion Pipeline API
+  version: 1.0.0
+  description: |
+    Production-ready multi-tenant ingestion pipeline for handling various data sources including CallRail webhooks, form submissions, and CRM integrations.
+
+    ## Key Features
+    - Multi-tenant isolation with secure authentication
+    - Real-time webhook processing with audio transcription
+    - AI-powered content analysis with Vertex AI Gemini
+    - Comprehensive CRM integrations
+    - Built on Google Cloud Platform with auto-scaling
+
+  contact:
+    email: support@pipeline.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.pipeline.com/v1
+    description: Production
+  - url: https://staging-api.pipeline.com/v1
+    description: Staging
+  - url: http://localhost:8080/v1
+    description: Development
+
+security:
+  - BearerAuth: []
+  - HMACSignature: []
+
+tags:
+  - name: Webhooks
+    description: Webhook endpoints for various data sources
+  - name: Tenants
+    description: Multi-tenant management
+  - name: Requests
+    description: Request processing and retrieval
+  - name: Analytics
+    description: Analytics and reporting
+  - name: Health
+    description: System health and monitoring
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      operationId: healthCheck
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /callrail/webhook:
+    post:
+      summary: CallRail webhook endpoint
+      operationId: processCallRailWebhook
+      tags: [Webhooks]
+      description: |
+        Processes incoming CallRail webhooks for completed calls.
+
+        ## Webhook Configuration
+        Configure in CallRail dashboard:
+        - Events: `call_completed`
+        - Signature verification enabled
+        - Include custom `tenant_id` field
+
+        ## Processing Flow
+        1. Verify HMAC signature
+        2. Extract tenant and call details
+        3. Download call recording
+        4. Transcribe audio with Speech-to-Text
+        5. Analyze content with Vertex AI
+        6. Push to CRM and notify stakeholders
+
+      security:
+        - HMACSignature: []
+      parameters:
+        - name: x-callrail-signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: HMAC signature for webhook verification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CallRailWebhook'
+            example:
+              call_id: "CAL123456789"
+              account_id: "AC987654321"
+              company_id: "12345"
+              caller_id: "+15551234567"
+              called_number: "+15559876543"
+              duration: "180"
+              start_time: "2025-09-13T10:30:00Z"
+              end_time: "2025-09-13T10:33:00Z"
+              direction: "inbound"
+              recording_url: "https://api.callrail.com/v3/a/AC987654321/calls/CAL123456789/recording.json"
+              answered: true
+              tenant_id: "tenant_12345"
+              callrail_company_id: "12345"
+      responses:
+        '200':
+          description: Webhook processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResponse'
+        '400':
+          description: Invalid webhook payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /form/webhook:
+    post:
+      summary: Generic form webhook endpoint
+      operationId: processFormWebhook
+      tags: [Webhooks]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FormWebhook'
+      responses:
+        '200':
+          description: Form submission processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResponse'
+
+  /tenants/{tenant_id}/requests:
+    get:
+      summary: List tenant requests
+      operationId: listTenantRequests
+      tags: [Requests]
+      parameters:
+        - $ref: '#/components/parameters/TenantIdParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, processing, completed, failed]
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [callrail_webhook, form_webhook, api_direct]
+        - name: request_type
+          in: query
+          schema:
+            type: string
+            enum: [phone_call, form_submission, email]
+      responses:
+        '200':
+          description: List of requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestList'
+
+    post:
+      summary: Create new request
+      operationId: createRequest
+      tags: [Requests]
+      parameters:
+        - $ref: '#/components/parameters/TenantIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestCreate'
+      responses:
+        '201':
+          description: Request created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+
+  /tenants/{tenant_id}/requests/{request_id}:
+    get:
+      summary: Get request details
+      operationId: getRequest
+      tags: [Requests]
+      parameters:
+        - $ref: '#/components/parameters/TenantIdParam'
+        - $ref: '#/components/parameters/RequestIdParam'
+      responses:
+        '200':
+          description: Request details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestDetails'
+
+  /tenants/{tenant_id}/analytics:
+    get:
+      summary: Get tenant analytics
+      operationId: getTenantAnalytics
+      tags: [Analytics]
+      parameters:
+        - $ref: '#/components/parameters/TenantIdParam'
+        - name: start_date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: group_by
+          in: query
+          schema:
+            type: string
+            enum: [day, week, month]
+            default: day
+      responses:
+        '200':
+          description: Analytics data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Analytics'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token for API authentication. Include in Authorization header:
+        `Authorization: Bearer <token>`
+
+    HMACSignature:
+      type: apiKey
+      in: header
+      name: x-callrail-signature
+      description: |
+        HMAC-SHA256 signature for webhook verification.
+        Format: `sha256=<signature>`
+
+  parameters:
+    TenantIdParam:
+      name: tenant_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^tenant_[a-zA-Z0-9_]+$'
+      description: Unique tenant identifier
+
+    RequestIdParam:
+      name: request_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^req_[a-zA-Z0-9_]+$'
+      description: Unique request identifier
+
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: Page number for pagination
+
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Number of items per page
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, timestamp, version]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        checks:
+          type: object
+          properties:
+            database:
+              type: string
+              enum: [healthy, unhealthy]
+            storage:
+              type: string
+              enum: [healthy, unhealthy]
+            speech_api:
+              type: string
+              enum: [healthy, unhealthy]
+
+    CallRailWebhook:
+      type: object
+      required: [call_id, tenant_id, callrail_company_id]
+      properties:
+        call_id:
+          type: string
+          description: CallRail call identifier
+        account_id:
+          type: string
+          description: CallRail account ID
+        company_id:
+          type: string
+          description: CallRail company ID
+        caller_id:
+          type: string
+          description: Caller phone number
+        called_number:
+          type: string
+          description: Business phone number called
+        duration:
+          type: string
+          description: Call duration in seconds
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        recording_url:
+          type: string
+          format: uri
+        answered:
+          type: boolean
+        tenant_id:
+          type: string
+          description: Target tenant identifier
+        callrail_company_id:
+          type: string
+          description: CallRail company ID for tenant mapping
+
+    FormWebhook:
+      type: object
+      required: [tenant_id, form_data]
+      properties:
+        tenant_id:
+          type: string
+        form_data:
+          type: object
+          additionalProperties: true
+        source_url:
+          type: string
+          format: uri
+        user_agent:
+          type: string
+        ip_address:
+          type: string
+
+    WebhookResponse:
+      type: object
+      required: [success, request_id]
+      properties:
+        success:
+          type: boolean
+        request_id:
+          type: string
+        processing_time_ms:
+          type: integer
+        message:
+          type: string
+
+    Request:
+      type: object
+      required: [id, tenant_id, source, request_type, status, created_at]
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        source:
+          type: string
+          enum: [callrail_webhook, form_webhook, api_direct]
+        request_type:
+          type: string
+          enum: [phone_call, form_submission, email]
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          description: Original request payload
+        ai_analysis:
+          $ref: '#/components/schemas/AIAnalysis'
+        lead_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+
+    RequestDetails:
+      allOf:
+        - $ref: '#/components/schemas/Request'
+        - type: object
+          properties:
+            call_details:
+              $ref: '#/components/schemas/CallDetails'
+            audio_processing:
+              $ref: '#/components/schemas/AudioProcessing'
+            workflow_steps:
+              type: array
+              items:
+                $ref: '#/components/schemas/WorkflowStep'
+
+    RequestCreate:
+      type: object
+      required: [source, request_type, data]
+      properties:
+        source:
+          type: string
+        request_type:
+          type: string
+        data:
+          type: object
+        metadata:
+          type: object
+
+    RequestList:
+      type: object
+      required: [requests, pagination]
+      properties:
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/Request'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    CallDetails:
+      type: object
+      properties:
+        customer_name:
+          type: string
+        customer_phone:
+          type: string
+        customer_location:
+          type: string
+        business_phone:
+          type: string
+        source:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        value:
+          type: string
+        good_call:
+          type: boolean
+
+    AudioProcessing:
+      type: object
+      properties:
+        recording_url:
+          type: string
+          format: uri
+        transcription:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        duration:
+          type: integer
+        speaker_count:
+          type: integer
+
+    AIAnalysis:
+      type: object
+      properties:
+        intent:
+          type: string
+          enum: [quote_request, information_seeking, appointment_booking, complaint, support]
+        project_type:
+          type: string
+          enum: [kitchen, bathroom, whole_home, addition, roofing, flooring, unknown]
+        timeline:
+          type: string
+          enum: [immediate, 1-3_months, 3-6_months, 6+_months, unknown]
+        budget_indicator:
+          type: string
+          enum: [high, medium, low, unknown]
+        sentiment:
+          type: string
+          enum: [positive, neutral, negative]
+        lead_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        urgency:
+          type: string
+          enum: [high, medium, low]
+        appointment_requested:
+          type: boolean
+        follow_up_required:
+          type: boolean
+        key_details:
+          type: array
+          items:
+            type: string
+
+    WorkflowStep:
+      type: object
+      required: [step_name, status, started_at]
+      properties:
+        step_name:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed, skipped]
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        error_message:
+          type: string
+        result_data:
+          type: object
+
+    Analytics:
+      type: object
+      required: [summary, time_series]
+      properties:
+        summary:
+          $ref: '#/components/schemas/AnalyticsSummary'
+        time_series:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeSeriesPoint'
+        top_sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceStats'
+
+    AnalyticsSummary:
+      type: object
+      properties:
+        total_requests:
+          type: integer
+        total_calls:
+          type: integer
+        total_forms:
+          type: integer
+        average_lead_score:
+          type: number
+        conversion_rate:
+          type: number
+        total_call_duration:
+          type: integer
+
+    TimeSeriesPoint:
+      type: object
+      required: [date, requests, calls, forms]
+      properties:
+        date:
+          type: string
+          format: date
+        requests:
+          type: integer
+        calls:
+          type: integer
+        forms:
+          type: integer
+        avg_lead_score:
+          type: number
+
+    SourceStats:
+      type: object
+      required: [source, count, percentage]
+      properties:
+        source:
+          type: string
+        count:
+          type: integer
+        percentage:
+          type: number
+
+    Pagination:
+      type: object
+      required: [page, limit, total, pages]
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        pages:
+          type: integer
+        has_next:
+          type: boolean
+        has_prev:
+          type: boolean
+
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+        request_id:
+          type: string
